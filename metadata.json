@@ -1,0 +1,5 @@
+{
+  "name": "Celebrity Selfie Generator PRO",
+  "description": "A professional AI-powered tool to generate realistic selfies with celebrities using Gemini models. Features include bulk generation, image queue management, and advanced prompt editing.",
+  "requestFramePermissions": []
+}

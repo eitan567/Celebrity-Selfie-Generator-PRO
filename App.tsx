@@ -268,6 +268,7 @@ function App() {
             customFullPrompt: null,
             aspectRatio: '1:1',
             isModifying: false,
+            isExpanded: false,
             history: [] // Initialize history
         }]);
         setCurrentForm(prev => ({ ...prev, celebrity: '', location: '' }));
@@ -303,6 +304,10 @@ function App() {
             }
             return s;
         }));
+    };
+
+    const toggleExpand = (id: number) => {
+        setScenarios(prev => prev.map(s => s.id === id ? { ...s, isExpanded: !s.isExpanded } : s));
     };
 
     // --- AI Logic (Same as before) ---
@@ -360,6 +365,7 @@ function App() {
                     customFullPrompt: null,
                     aspectRatio: '1:1',
                     isModifying: false,
+                    isExpanded: false,
                     history: []
                 }));
                 setScenarios(prev => [...prev, ...newScenarios]);
@@ -415,6 +421,7 @@ function App() {
                     customFullPrompt: null,
                     aspectRatio: '1:1',
                     isModifying: false,
+                    isExpanded: false,
                     history: []
                 }));
                 setScenarios(prev => [...prev, ...newScenarios]);
@@ -454,14 +461,24 @@ function App() {
 
         const candidates = response.candidates;
         if (candidates && candidates.length > 0) {
-            for (const part of candidates[0].content.parts) {
-                if (part.inlineData) {
-                    return `data:image/jpeg;base64,${part.inlineData.data}`;
+            const content = candidates[0].content;
+            if (content && content.parts) {
+                // Priority: Check for image
+                for (const part of content.parts) {
+                    if (part.inlineData) {
+                        return `data:image/jpeg;base64,${part.inlineData.data}`;
+                    }
+                }
+                // Fallback: Check for text (refusal/error)
+                for (const part of content.parts) {
+                    if (part.text) {
+                         throw new Error(part.text);
+                    }
                 }
             }
         }
         
-        throw new Error('No image generated');
+        throw new Error('No image generated (Unknown reason)');
     };
 
     // --- Modify Generated Image ---
@@ -488,18 +505,33 @@ function App() {
                         { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
                         { text: refinedInstruction }
                     ]
+                },
+                config: {
+                    imageConfig: {
+                        aspectRatio: scenario.aspectRatio || "1:1"
+                    }
                 }
             });
 
             let newImageUrl = null;
             const candidates = response.candidates;
             if (candidates && candidates.length > 0) {
-                for (const part of candidates[0].content.parts) {
-                    if (part.inlineData) {
-                        newImageUrl = `data:image/jpeg;base64,${part.inlineData.data}`;
-                        break;
+                const content = candidates[0].content;
+                 if (content && content.parts) {
+                    for (const part of content.parts) {
+                        if (part.inlineData) {
+                            newImageUrl = `data:image/jpeg;base64,${part.inlineData.data}`;
+                            break;
+                        }
                     }
-                }
+                    if (!newImageUrl) {
+                         for (const part of content.parts) {
+                            if (part.text) {
+                                throw new Error(part.text);
+                            }
+                        }
+                    }
+                 }
             }
 
             if (newImageUrl) {
@@ -613,6 +645,8 @@ function App() {
                         setCurrentPendingId(nextItem.id);
                     } catch (e) {
                         console.error(e);
+                        // Make sure to display the error text from the throw in generateImageCall
+                        addToast(e instanceof Error ? e.message : "שגיאה לא ידועה", 'error');
                         setScenarios(prev => prev.map(s => s.id === nextItem.id ? { ...s, status: 'error' } : s));
                         setIsPausedForApproval(false); 
                     }
@@ -696,7 +730,7 @@ function App() {
             addToast("נוצרה גרסה חדשה בהצלחה", 'success');
         } catch (e) {
             console.error("Regeneration Error", e);
-            addToast("שגיאה ביצירה מחדש", 'error');
+            addToast("שגיאה ביצירה מחדש: " + (e instanceof Error ? e.message : ''), 'error');
             // Reset state on error
             setScenarios(prev => prev.map(s => s.id === currentId ? { ...s, isModifying: false } : s));
         }
@@ -889,8 +923,8 @@ function App() {
 
     // --- RENDER: GENERATOR SCREEN (Existing UI) ---
     return (
-        <div className="min-h-screen bg-gray-50 pb-20">
-            <header className={`bg-gradient-to-l ${selectedTemplate.colorFrom} ${selectedTemplate.colorTo} text-white p-6 shadow-lg sticky top-0 z-20`}>
+        <div className="h-screen bg-gray-50 overflow-hidden flex flex-col">
+            <header className={`bg-gradient-to-l ${selectedTemplate.colorFrom} ${selectedTemplate.colorTo} text-white p-6 shadow-lg z-20 shrink-0`}>
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <button 
@@ -916,11 +950,11 @@ function App() {
                 </div>
             </header>
 
-            <main className="max-w-7xl mx-auto mt-8 px-4 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <main className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
                 
                 {/* --- LEFT COLUMN (Sticky) --- */}
-                <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-24">
-                    
+                <div className="lg:col-span-4 h-full overflow-y-auto pr-2 pb-4 scrollbar-hide">
+                    <div className="space-y-6">
                     {/* 1. Gallery */}
                     <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                         <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-700">
@@ -1089,13 +1123,14 @@ function App() {
                             </div>
                         )}
                     </div>
+                    </div>
                 </div>
 
                 {/* --- RIGHT COLUMN (Normal Flow) --- */}
-                <div className="lg:col-span-8 space-y-6">
+                <div className="lg:col-span-8 h-full flex flex-col min-h-0">
                     
                     {/* Toolbar */}
-                    <div className="bg-white p-4 rounded-xl shadow-sm flex flex-wrap justify-between items-center gap-4 sticky top-24 z-10 border border-gray-100">
+                    <div className="bg-white p-4 rounded-xl shadow-sm flex flex-wrap justify-between items-center gap-4 border border-gray-100 mb-4 shrink-0">
                         <div className="flex items-center gap-3">
                             <h2 className="font-bold text-gray-700 text-lg">תור יצירה ({scenarios.length})</h2>
                             <div className="flex gap-2 text-sm text-gray-500">
@@ -1123,7 +1158,8 @@ function App() {
                     </div>
 
                     {/* Queue List */}
-                    <div className="space-y-4">
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2 pb-2 mb-8 scrollbar-thin">
+                        <div className="space-y-4">
                         {scenarios.length === 0 && (
                             <div className="text-center py-20 bg-white/50 rounded-xl border-2 border-dashed border-gray-300 text-gray-400">
                                 <Icon name="List" size={48} className="mx-auto mb-2 opacity-20"/>
@@ -1133,7 +1169,7 @@ function App() {
 
                         {scenarios.map((item, index) => (
                             <div key={item.id} className={`relative bg-white rounded-xl shadow-sm border transition-all duration-300
-                                ${item.status === 'approval_pending' ? 'border-yellow-500 ring-4 ring-yellow-100 scale-[1.02] z-10' : 'border-gray-100 hover:border-gray-300'}
+                                ${item.status === 'approval_pending' ? 'border-yellow-500 ring-4 ring-yellow-100 scale-[1] z-10' : 'border-gray-100 hover:border-gray-300'}
                             `}>
                                 <div className="p-4 flex flex-col md:flex-row gap-4 items-start md:items-center">
                                     
@@ -1225,33 +1261,57 @@ function App() {
                                             
                                             {/* Image with Overlays */}
                                             <div className="flex flex-col gap-2">
-                                                <div className="relative group rounded-lg overflow-hidden border-2 border-white shadow-md">
-                                                    <img src={item.resultImage} className="w-full h-auto object-cover" alt="Result" />
-                                                    
-                                                    {/* Modification Loader Overlay */}
-                                                    {item.isModifying && (
-                                                        <div className="absolute inset-0 bg-white/50 backdrop-blur-sm flex flex-col items-center justify-center z-20">
-                                                            <Icon name="Loader2" className="animate-spin text-yellow-600 mb-2" size={32} />
-                                                            <span className="text-yellow-800 font-bold text-sm shadow-sm">מעדכן תמונה...</span>
-                                                        </div>
-                                                    )}
+                                                <div className="flex justify-center w-full">
+                                                    <div className={`relative group w-full rounded-lg border-2 border-white shadow-md bg-gray-50 transition-all duration-500 ease-in-out ${item.isExpanded ? 'h-auto' : 'h-80 overflow-hidden'}`}>
+                                                        <img src={item.resultImage} className={`${item.isExpanded ? 'w-full h-auto' : 'w-full h-full object-cover object-top'}`} alt="Result" />
+                                                        
+                                                        {/* Modification Loader Overlay */}
+                                                        {item.isModifying && (
+                                                            <div className="absolute inset-0 bg-white/50 backdrop-blur-sm flex flex-col items-center justify-center z-20">
+                                                                <Icon name="Loader2" className="animate-spin text-yellow-600 mb-2" size={32} />
+                                                                <span className="text-yellow-800 font-bold text-sm shadow-sm">מעדכן תמונה...</span>
+                                                            </div>
+                                                        )}
 
-                                                    <div className="absolute top-2 left-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <a 
-                                                            href={item.resultImage} 
-                                                            download={`selfie_${item.celebrity}.jpg`}
-                                                            className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
-                                                            title="הורדה"
-                                                        >
-                                                            <Icon name="Download" size={16}/>
-                                                        </a>
-                                                        <button 
-                                                            onClick={() => setFullscreenImage(item.resultImage)}
-                                                            className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
-                                                            title="הגדל"
-                                                        >
-                                                            <Icon name="Maximize" size={16}/>
-                                                        </button>
+                                                        {/* Expand Overlay Button (Only when collapsed) */}
+                                                        {!item.isExpanded && (
+                                                            <div 
+                                                                onClick={() => toggleExpand(item.id)}
+                                                                className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-white via-white/80 to-transparent flex items-end justify-center pb-4 cursor-pointer hover:via-white/90 transition-all group/expand"
+                                                            >
+                                                                <span className="bg-white/80 backdrop-blur px-4 py-1.5 rounded-full text-sm font-bold text-gray-800 flex items-center gap-1 shadow-sm border border-gray-200 group-hover/expand:scale-105 transition-transform">
+                                                                    <Icon name="ChevronDown" size={16} /> הצג תמונה מלאה
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {/* Collapse Button (Only when expanded) */}
+                                                        {item.isExpanded && (
+                                                             <button 
+                                                                onClick={() => toggleExpand(item.id)}
+                                                                className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur px-4 py-1.5 rounded-full text-sm font-bold text-gray-800 flex items-center gap-1 shadow-md border border-gray-200 hover:bg-white transition"
+                                                            >
+                                                                <Icon name="ChevronUp" size={16} /> הקטן תצוגה
+                                                            </button>
+                                                        )}
+
+                                                        <div className="absolute top-2 left-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                                            <a 
+                                                                href={item.resultImage} 
+                                                                download={`selfie_${item.celebrity}.jpg`}
+                                                                className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
+                                                                title="הורדה"
+                                                            >
+                                                                <Icon name="Download" size={16}/>
+                                                            </a>
+                                                            <button 
+                                                                onClick={() => setFullscreenImage(item.resultImage)}
+                                                                className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
+                                                                title="הגדל"
+                                                            >
+                                                                <Icon name="Maximize" size={16}/>
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
 
@@ -1359,6 +1419,7 @@ function App() {
                                 )}
                             </div>
                         ))}
+                        </div>
                     </div>
                 </div>
             </main>

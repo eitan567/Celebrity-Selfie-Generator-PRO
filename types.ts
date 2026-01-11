@@ -28,6 +28,7 @@ export interface Scenario {
     aspectRatio: string; // "1:1" | "16:9" | "9:16" | "4:3" | "3:4"
     calculatedPrompt?: string; // used for edit modal temporary state
     isModifying?: boolean; // New flag for UI loading state during modification
+    isExpanded?: boolean; // Flag for image view expansion in the list
     history: ImageVersion[]; // Array to store all generated versions
 }
 

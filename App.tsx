@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { Icon } from './components/Icons';
 import { Tooltip } from './components/Tooltip';
-import { UserImage, Scenario, EditModalData, PromptTemplate, ToastMessage } from './types';
+import { UserImage, Scenario, EditModalData, PromptTemplate, ToastMessage, ImageVersion } from './types';
 
 // --- DEFINED TEMPLATES ---
 const DEFAULT_TEMPLATES: PromptTemplate[] = [
@@ -267,7 +267,8 @@ function App() {
             additionalDetails: '',
             customFullPrompt: null,
             aspectRatio: '1:1',
-            isModifying: false
+            isModifying: false,
+            history: [] // Initialize history
         }]);
         setCurrentForm(prev => ({ ...prev, celebrity: '', location: '' }));
     };
@@ -287,6 +288,21 @@ function App() {
 
     const removeScenario = (id: number) => {
         setScenarios(scenarios.filter(s => s.id !== id));
+    };
+
+    // --- History Helper ---
+    const restoreVersion = (scenarioId: number, version: ImageVersion) => {
+        setScenarios(prev => prev.map(s => {
+            if (s.id === scenarioId) {
+                return {
+                    ...s,
+                    resultImage: version.imageUrl,
+                    // We don't change the main prompts, just the visual result.
+                    // Future edits will be based on this restored version.
+                };
+            }
+            return s;
+        }));
     };
 
     // --- AI Logic (Same as before) ---
@@ -343,7 +359,8 @@ function App() {
                     additionalDetails: '',
                     customFullPrompt: null,
                     aspectRatio: '1:1',
-                    isModifying: false
+                    isModifying: false,
+                    history: []
                 }));
                 setScenarios(prev => [...prev, ...newScenarios]);
                 setBulkText('');
@@ -397,7 +414,8 @@ function App() {
                     additionalDetails: '',
                     customFullPrompt: null,
                     aspectRatio: '1:1',
-                    isModifying: false
+                    isModifying: false,
+                    history: []
                 }));
                 setScenarios(prev => [...prev, ...newScenarios]);
                 setInputMode('manual');
@@ -460,12 +478,15 @@ function App() {
         try {
             const base64Data = scenario.resultImage.split(',')[1];
             
+            // Refined prompt to ensure image output
+            const refinedInstruction = `Edit the attached image according to this instruction: ${instruction}. Return the edited image.`;
+
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash-image',
                 contents: {
                     parts: [
                         { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
-                        { text: instruction }
+                        { text: refinedInstruction }
                     ]
                 }
             });
@@ -482,8 +503,22 @@ function App() {
             }
 
             if (newImageUrl) {
+                const newVersion: ImageVersion = {
+                    id: Date.now().toString(),
+                    imageUrl: newImageUrl,
+                    prompt: instruction,
+                    timestamp: Date.now(),
+                    type: 'edit'
+                };
+
                 // Update image, clear isModifying, keep status as approval_pending (or whatever it was)
-                setScenarios(prev => prev.map(s => s.id === id ? { ...s, isModifying: false, resultImage: newImageUrl } : s));
+                setScenarios(prev => prev.map(s => s.id === id ? { 
+                    ...s, 
+                    isModifying: false, 
+                    resultImage: newImageUrl,
+                    history: [...s.history, newVersion] // Add to history
+                } : s));
+                
                 setModificationPrompt(''); // Clear input
                 addToast("התמונה עודכנה בהצלחה!", 'success');
             } else {
@@ -527,8 +562,22 @@ function App() {
         
         try {
             const url = await generateImageCall(item);
-            // CHANGE: Set status to 'approval_pending' to allow modification immediately
-            setScenarios(prev => prev.map(s => s.id === id ? { ...s, status: 'approval_pending', resultImage: url } : s));
+            
+            const newVersion: ImageVersion = {
+                id: Date.now().toString(),
+                imageUrl: url,
+                prompt: constructPrompt(item),
+                timestamp: Date.now(),
+                type: 'initial'
+            };
+
+            // CHANGE: Set status to 'approval_pending' and add history
+            setScenarios(prev => prev.map(s => s.id === id ? { 
+                ...s, 
+                status: 'approval_pending', 
+                resultImage: url,
+                history: [...s.history, newVersion]
+            } : s));
         } catch (e) {
             console.error(e);
             setScenarios(prev => prev.map(s => s.id === id ? { ...s, status: 'error' } : s));
@@ -545,7 +594,21 @@ function App() {
                     setScenarios(prev => prev.map(s => s.id === nextItem.id ? { ...s, status: 'processing' } : s));
                     try {
                         const url = await generateImageCall(nextItem);
-                        setScenarios(prev => prev.map(s => s.id === nextItem.id ? { ...s, status: 'approval_pending', resultImage: url } : s));
+                        
+                        const newVersion: ImageVersion = {
+                            id: Date.now().toString(),
+                            imageUrl: url,
+                            prompt: constructPrompt(nextItem),
+                            timestamp: Date.now(),
+                            type: 'initial'
+                        };
+
+                        setScenarios(prev => prev.map(s => s.id === nextItem.id ? { 
+                            ...s, 
+                            status: 'approval_pending', 
+                            resultImage: url,
+                            history: [...s.history, newVersion] 
+                        } : s));
                         setIsPausedForApproval(true);
                         setCurrentPendingId(nextItem.id);
                     } catch (e) {
@@ -587,18 +650,56 @@ function App() {
 
     const handleReGenerate = async () => {
         if (!editModalData) return;
-        setScenarios(prev => prev.map(s => s.id === editModalData.id ? { 
-            ...s, 
+
+        // 1. Capture data needed
+        const currentId = editModalData.id;
+        const updatedScenarioData: Scenario = {
+            ...scenarios.find(s => s.id === currentId)!,
             celebrity: editModalData.celebrity,
             location: editModalData.location,
             additionalDetails: editModalData.additionalDetails,
             customFullPrompt: editModalData.customFullPrompt,
             aspectRatio: editModalData.aspectRatio,
-            status: 'idle',
-            resultImage: null
+        };
+
+        // 2. Close Modal immediately
+        setEditModalData(null);
+
+        // 3. Set UI state to "Modifying" on the card
+        setScenarios(prev => prev.map(s => s.id === currentId ? {
+            ...updatedScenarioData, // Update text fields
+            status: 'approval_pending', // Keep expanded
+            isModifying: true // Show loader overlay
         } : s));
-        setEditModalData(null); 
-        setIsPausedForApproval(false); 
+
+        try {
+            // 4. Generate
+            const url = await generateImageCall(updatedScenarioData);
+
+            const newVersion: ImageVersion = {
+                id: Date.now().toString(),
+                imageUrl: url,
+                prompt: constructPrompt(updatedScenarioData),
+                timestamp: Date.now(),
+                type: 'regeneration'
+            };
+
+            // 5. Update result
+            setScenarios(prev => prev.map(s => s.id === currentId ? {
+                ...s,
+                status: 'approval_pending',
+                isModifying: false,
+                resultImage: url,
+                history: [...s.history, newVersion]
+            } : s));
+
+            addToast("נוצרה גרסה חדשה בהצלחה", 'success');
+        } catch (e) {
+            console.error("Regeneration Error", e);
+            addToast("שגיאה ביצירה מחדש", 'error');
+            // Reset state on error
+            setScenarios(prev => prev.map(s => s.id === currentId ? { ...s, isModifying: false } : s));
+        }
     };
 
     const exitToSelection = () => {
@@ -939,7 +1040,7 @@ function App() {
                                                     setShowTopicDropdown(true);
                                                 }}
                                                 onFocus={() => setShowTopicDropdown(true)}
-                                                className="w-full p-2 border border-gray-300 rounded text-sm bg-white text-gray-900 focus:ring-2 focus:ring-blue-300 outline-none" 
+                                                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-300 outline-none bg-white text-gray-900" 
                                                 placeholder="נושא: גיבורי על, זמרים..." 
                                             />
                                             {showTopicDropdown && (
@@ -1123,34 +1224,54 @@ function App() {
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             
                                             {/* Image with Overlays */}
-                                            <div className="relative group rounded-lg overflow-hidden border-2 border-white shadow-md">
-                                                <img src={item.resultImage} className="w-full h-auto object-cover" alt="Result" />
-                                                
-                                                {/* Modification Loader Overlay */}
-                                                {item.isModifying && (
-                                                    <div className="absolute inset-0 bg-white/50 backdrop-blur-sm flex flex-col items-center justify-center z-20">
-                                                        <Icon name="Loader2" className="animate-spin text-yellow-600 mb-2" size={32} />
-                                                        <span className="text-yellow-800 font-bold text-sm shadow-sm">מעדכן תמונה...</span>
+                                            <div className="flex flex-col gap-2">
+                                                <div className="relative group rounded-lg overflow-hidden border-2 border-white shadow-md">
+                                                    <img src={item.resultImage} className="w-full h-auto object-cover" alt="Result" />
+                                                    
+                                                    {/* Modification Loader Overlay */}
+                                                    {item.isModifying && (
+                                                        <div className="absolute inset-0 bg-white/50 backdrop-blur-sm flex flex-col items-center justify-center z-20">
+                                                            <Icon name="Loader2" className="animate-spin text-yellow-600 mb-2" size={32} />
+                                                            <span className="text-yellow-800 font-bold text-sm shadow-sm">מעדכן תמונה...</span>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="absolute top-2 left-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <a 
+                                                            href={item.resultImage} 
+                                                            download={`selfie_${item.celebrity}.jpg`}
+                                                            className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
+                                                            title="הורדה"
+                                                        >
+                                                            <Icon name="Download" size={16}/>
+                                                        </a>
+                                                        <button 
+                                                            onClick={() => setFullscreenImage(item.resultImage)}
+                                                            className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
+                                                            title="הגדל"
+                                                        >
+                                                            <Icon name="Maximize" size={16}/>
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* History Gallery */}
+                                                {item.history && item.history.length > 1 && (
+                                                    <div className="flex gap-2 overflow-x-auto pb-2 pt-1 scrollbar-hide">
+                                                        {item.history.slice().reverse().map((version) => (
+                                                            <div 
+                                                                key={version.id}
+                                                                onClick={() => restoreVersion(item.id, version)}
+                                                                className={`relative shrink-0 w-12 h-12 rounded cursor-pointer border-2 overflow-hidden transition-all
+                                                                    ${item.resultImage === version.imageUrl ? 'border-yellow-500 ring-1 ring-yellow-300' : 'border-gray-300 opacity-60 hover:opacity-100'}
+                                                                `}
+                                                                title={`גרסה: ${version.type === 'initial' ? 'ראשונית' : version.prompt}`}
+                                                            >
+                                                                <img src={version.imageUrl} className="w-full h-full object-cover" />
+                                                            </div>
+                                                        ))}
                                                     </div>
                                                 )}
-
-                                                <div className="absolute top-2 left-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <a 
-                                                        href={item.resultImage} 
-                                                        download={`selfie_${item.celebrity}.jpg`}
-                                                        className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
-                                                        title="הורדה"
-                                                    >
-                                                        <Icon name="Download" size={16}/>
-                                                    </a>
-                                                    <button 
-                                                        onClick={() => setFullscreenImage(item.resultImage)}
-                                                        className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
-                                                        title="הגדל"
-                                                    >
-                                                        <Icon name="Maximize" size={16}/>
-                                                    </button>
-                                                </div>
                                             </div>
 
                                             <div className="flex flex-col justify-between gap-3">
@@ -1261,7 +1382,7 @@ function App() {
                                         type="text" 
                                         value={editModalData.celebrity} 
                                         onChange={(e) => setEditModalData({...editModalData, celebrity: e.target.value})}
-                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
                                     />
                                 </div>
                                 <div>
@@ -1270,7 +1391,7 @@ function App() {
                                         type="text" 
                                         value={editModalData.location} 
                                         onChange={(e) => setEditModalData({...editModalData, location: e.target.value})}
-                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
                                     />
                                 </div>
                             </div>
@@ -1284,7 +1405,7 @@ function App() {
                                     type="text" 
                                     value={editModalData.additionalDetails || ''} 
                                     onChange={(e) => setEditModalData({...editModalData, additionalDetails: e.target.value})}
-                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none placeholder-gray-300"
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 placeholder-gray-400"
                                     placeholder="לדוגמה: תאורה חשוכה, הבעה מופתעת..."
                                 />
                             </div>
@@ -1304,7 +1425,7 @@ function App() {
                                         <textarea 
                                             value={editModalData.customFullPrompt || constructPrompt(editModalData)}
                                             onChange={(e) => setEditModalData({...editModalData, customFullPrompt: e.target.value})}
-                                            className="w-full h-32 p-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-300 outline-none font-mono"
+                                            className="w-full h-32 p-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-300 outline-none font-mono bg-white text-gray-900"
                                         ></textarea>
                                     </div>
                                 )}
@@ -1312,7 +1433,7 @@ function App() {
                             
                             <button 
                                 onClick={handleReGenerate}
-                                className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl shadow-lg mt-4 flex justify-center gap-2"
+                                className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl shadow-lg mt-4 flex justify-center gap-2 transition-all"
                             >
                                 <Icon name="Camera" /> שמור וצור מחדש
                             </button>

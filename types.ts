@@ -7,6 +7,14 @@ export interface UserImage {
     mimeType: string;
 }
 
+export interface ImageVersion {
+    id: string;
+    imageUrl: string;
+    prompt: string; // The instruction or prompt used to generate this version
+    timestamp: number;
+    type: 'initial' | 'edit' | 'regeneration';
+}
+
 export interface Scenario {
     id: number;
     celebrity: string;
@@ -20,6 +28,7 @@ export interface Scenario {
     aspectRatio: string; // "1:1" | "16:9" | "9:16" | "4:3" | "3:4"
     calculatedPrompt?: string; // used for edit modal temporary state
     isModifying?: boolean; // New flag for UI loading state during modification
+    history: ImageVersion[]; // Array to store all generated versions
 }
 
 export interface PromptTemplate {

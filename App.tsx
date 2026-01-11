@@ -1,13 +1,95 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { Icon } from './components/Icons';
 import { Tooltip } from './components/Tooltip';
-import { UserImage, Scenario, EditModalData } from './types';
+import { UserImage, Scenario, EditModalData, PromptTemplate, ToastMessage } from './types';
+
+// --- DEFINED TEMPLATES ---
+const DEFAULT_TEMPLATES: PromptTemplate[] = [
+    {
+        id: 'celebrity-selfie',
+        title: 'סלפי עם מפורסם',
+        description: 'צור תמונת סלפי ריאליסטית שלך עם המפורסם האהוב עליך, כולל צוות הפקה וציוד ברקע.',
+        iconName: 'Camera',
+        colorFrom: 'from-yellow-500',
+        colorTo: 'to-yellow-700', // Reverted to original darker yellow/gold
+        basePromptGenerator: (celebrity, location, phone, details) => {
+            let prompt = `Generate an image of:
+The exact facial features, skin tone, bone structure, hairstyle, and expression of the attached
+person (or persons), with no alteration or face swapping. The attached person is taking a selfie with
+${celebrity}, standing at ${location}. Crew members are adjusting internal lighting and
+equipment, with cables and gear visible.
+Directors and managers are standing behind, discussing the next take.
+
+Show the attached person(smiling with closed lips) on the left and the actor - hugging the person lightly with its right hand - on the right - while only the attached person is taking the selfie with its ${phone} - naturally.`;
+            if (details) prompt += `\n\nAdditional Requirements: ${details}`;
+            return prompt;
+        }
+    },
+    {
+        id: 'red-carpet',
+        title: 'פפראצי שטיח אדום',
+        description: 'אתה והמפורסם צועדים יחד על השטיח האדום, מוקפים בצלמים ואורות פלאש.',
+        iconName: 'Star',
+        colorFrom: 'from-red-500',
+        colorTo: 'to-orange-500',
+        basePromptGenerator: (celebrity, location, phone, details) => {
+            let prompt = `Generate a high-quality paparazzi style photo of the attached person walking side-by-side with ${celebrity} on a prestigious red carpet event at ${location}. 
+            The attached person should look glamorous and confident. 
+            Background should include blurred photographers with flashbulbs going off, red velvet ropes, and an excited crowd.
+            Lighting should be dramatic and high-contrast typical of night events.`;
+            if (details) prompt += `\n\nAdditional Requirements: ${details}`;
+            return prompt;
+        }
+    },
+    {
+        id: 'coffee-date',
+        title: 'פגישת קפה',
+        description: 'תמונה קזואלית ואינטימית שלך יושב לקפה עם מפורסם בבית קפה אופנתי.',
+        iconName: 'LayoutGrid',
+        colorFrom: 'from-amber-700',
+        colorTo: 'to-yellow-600',
+        basePromptGenerator: (celebrity, location, phone, details) => {
+            let prompt = `Generate a candid photo of the attached person sitting at a cafe table across from ${celebrity} at ${location}. 
+            They are laughing and enjoying coffee. The atmosphere is warm, cozy, and natural sunlight is coming through the window.
+            The attached person is visible clearly. Focus on realistic textures and casual clothing.`;
+            if (details) prompt += `\n\nAdditional Requirements: ${details}`;
+            return prompt;
+        }
+    }
+];
+
+// --- SUGGESTED TOPICS FOR AI ---
+const SUGGESTED_TOPICS = [
+    "גיבורי על בסרט פעולה",
+    "זמרים מפורסמים בהופעה חיה",
+    "דמויות היסטוריות במאה ה-21",
+    "שחקני כדורגל במונדיאל",
+    "כוכבי קולנוע על סט צילומים",
+    "דמויות מצוירות בעולם אמיתי",
+    "פוליטיקאים בפגישה סודית",
+    "אסטרונאוטים בחלל",
+    "שפים מפורסמים במטבח",
+    "דוגמניות בשבוע האופנה בפריז",
+    "מנכ\"לי הייטק בעמק הסיליקון",
+    "זוכי אוסקר בטקס הפרסים"
+];
 
 function App() {
-    // State
+    // --- State: View Mode & Templates ---
+    const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
+    const [customTemplates, setCustomTemplates] = useState<PromptTemplate[]>([]);
+    const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
+
+    // --- State: New Template Form ---
+    const [newTemplateForm, setNewTemplateForm] = useState({
+        title: '',
+        description: '',
+        userTemplateString: 'Generate a photo of the attached person with {celebrity} at {location}. They are holding {phone}...'
+    });
+
+    // --- State: Generator ---
     const [userImages, setUserImages] = useState<UserImage[]>([]);
-    // Changed: activeImageId is now an array activeImageIds
     const [activeImageIds, setActiveImageIds] = useState<number[]>([]);
     
     const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -23,41 +105,115 @@ function App() {
         phone: 'Samsung S23 Ultra Black Case'
     });
 
+    // --- State: Bulk / AI Input ---
     const [bulkText, setBulkText] = useState('');
     const [aiTopic, setAiTopic] = useState('');
+    const [showTopicDropdown, setShowTopicDropdown] = useState(false);
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [isParsingBulk, setIsParsingBulk] = useState(false);
 
     const [editModalData, setEditModalData] = useState<EditModalData | null>(null);
     const [showAdvancedPrompt, setShowAdvancedPrompt] = useState(false);
     const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+    const [modificationPrompt, setModificationPrompt] = useState('');
+    // Global flag (optional, but good for blocking queue), we now mostly use item.isModifying
+    const [isModifyingGlobal, setIsModifyingGlobal] = useState(false);
+    const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setShowTopicDropdown(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    // --- Toast System ---
+    const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        const id = Date.now() + Math.random();
+        setToasts(prev => [...prev, { id, message, type }]);
+        // Auto remove after 4 seconds
+        setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, 4000);
+    };
+
+    const removeToast = (id: number) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+    };
 
     // Helper: Get selected images objects
     const selectedImages = userImages.filter(img => activeImageIds.includes(img.id));
 
-    // --- Construct Prompt ---
+    // --- Construct Prompt (Dynamic based on Template) ---
     const constructPrompt = (scenario: Scenario | EditModalData) => {
         if (scenario.customFullPrompt) return scenario.customFullPrompt;
+        if (!selectedTemplate) return "";
 
-        let basePrompt = `Generate an image of:
-The exact facial features, skin tone, bone structure, hairstyle, and expression of the attached
-person (or persons), with no alteration or face swapping. The attached person is taking a selfie with
-${scenario.celebrity}, standing at ${scenario.location}. Crew members are adjusting internal lighting and
-equipment, with cables and gear visible.
-Directors and managers are standing behind, discussing the next take.
-
-Show the attached person(smiling with closed lips) on the left and the actor - hugging the person lightly with its right hand - on the right - while only the attached person is taking the selfie with its ${scenario.phone} - naturally.`;
-
-        if (scenario.additionalDetails) {
-            basePrompt += `\n\nAdditional Requirements: ${scenario.additionalDetails}`;
+        // Handle Custom String Templates
+        if (selectedTemplate.userTemplateString) {
+            let prompt = selectedTemplate.userTemplateString
+                .replace(/{celebrity}/g, scenario.celebrity)
+                .replace(/{location}/g, scenario.location)
+                .replace(/{phone}/g, scenario.phone);
+            
+            if (scenario.additionalDetails) {
+                prompt += `\n\nAdditional details: ${scenario.additionalDetails}`;
+            }
+            // Always append the technical requirement for the attached person
+            prompt += `\n\n(IMPORTANT: Use the attached face image for the main subject. Keep facial features exact. No face swapping.)`;
+            return prompt;
         }
 
-        return basePrompt;
+        // Handle Built-in Function Templates
+        if (selectedTemplate.basePromptGenerator) {
+            return selectedTemplate.basePromptGenerator(
+                scenario.celebrity,
+                scenario.location,
+                scenario.phone,
+                scenario.additionalDetails
+            );
+        }
+
+        return "";
     };
 
     // --- Handlers ---
+    const handleSaveTemplate = () => {
+        if (!newTemplateForm.title || !newTemplateForm.userTemplateString) {
+            addToast("נא למלא כותרת ותבנית פרומפט", 'error');
+            return;
+        }
+        
+        const newTemplate: PromptTemplate = {
+            id: `custom-${Date.now()}`,
+            title: newTemplateForm.title,
+            description: newTemplateForm.description || 'תבנית מותאמת אישית',
+            iconName: 'Wand2',
+            colorFrom: 'from-gray-700',
+            colorTo: 'to-gray-900',
+            userTemplateString: newTemplateForm.userTemplateString,
+            isCustom: true
+        };
+
+        setCustomTemplates([...customTemplates, newTemplate]);
+        setIsCreatingTemplate(false);
+        setNewTemplateForm({ title: '', description: '', userTemplateString: 'Generate a photo of the attached person with {celebrity} at {location}. They are holding {phone}...' });
+        addToast("תבנית חדשה נשמרה בהצלחה", 'success');
+    };
+
+    const deleteTemplate = (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        setCustomTemplates(prev => prev.filter(t => t.id !== id));
+        addToast("התבנית נמחקה", 'info');
+    };
+
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []) as File[];
         if (files.length === 0) return;
@@ -79,8 +235,8 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
 
         Promise.all(fileReaders).then(newImages => {
             setUserImages(prev => [...prev, ...newImages]);
-            // Auto select newly uploaded images
             setActiveImageIds(prev => [...prev, ...newImages.map(img => img.id)]);
+            addToast(`${newImages.length} תמונות הועלו בהצלחה`, 'success');
         });
     };
 
@@ -109,9 +265,15 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
             isSelected: true,
             resultImage: null,
             additionalDetails: '',
-            customFullPrompt: null
+            customFullPrompt: null,
+            aspectRatio: '1:1',
+            isModifying: false
         }]);
         setCurrentForm(prev => ({ ...prev, celebrity: '', location: '' }));
+    };
+
+    const updateScenarioRatio = (id: number, ratio: string) => {
+        setScenarios(prev => prev.map(s => s.id === id ? { ...s, aspectRatio: ratio } : s));
     };
 
     const toggleSelection = (id: number) => {
@@ -127,7 +289,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
         setScenarios(scenarios.filter(s => s.id !== id));
     };
 
-    // --- AI Logic ---
+    // --- AI Logic (Same as before) ---
     const processBulkInputWithAI = async () => {
         if (!bulkText.trim()) return;
         setIsParsingBulk(true);
@@ -164,7 +326,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                 }
             } catch (err) {
                 console.error("AI Parse Error", err);
-                alert("ה-AI לא הצליח לפענח את הרשימה.");
+                addToast("ה-AI לא הצליח לפענח את הרשימה.", 'error');
                 return;
             }
 
@@ -179,17 +341,20 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                     isSelected: true,
                     resultImage: null,
                     additionalDetails: '',
-                    customFullPrompt: null
+                    customFullPrompt: null,
+                    aspectRatio: '1:1',
+                    isModifying: false
                 }));
                 setScenarios(prev => [...prev, ...newScenarios]);
                 setBulkText('');
                 setInputMode('manual'); 
+                addToast(`${newScenarios.length} סצינות נוספו בהצלחה`, 'success');
             } else {
-                 alert("ה-AI החזיר רשימה ריקה.");
+                 addToast("ה-AI החזיר רשימה ריקה.", 'error');
             }
         } catch (e) {
             console.error(e);
-            alert("שגיאה בתקשורת עם ה-AI.");
+            addToast("שגיאה בתקשורת עם ה-AI.", 'error');
         } finally {
             setIsParsingBulk(false);
         }
@@ -198,6 +363,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
     const generateAiSuggestions = async () => {
         if (!aiTopic) return;
         setIsAiLoading(true);
+        setShowTopicDropdown(false);
         try {
             const prompt = `Generate a JSON list of 5 scenarios for a selfie. Topic: "${aiTopic}". 
             Format: [{ "celebrity": "Name", "location": "Location" }]. Return ONLY raw JSON.`;
@@ -229,14 +395,16 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                     isSelected: true,
                     resultImage: null,
                     additionalDetails: '',
-                    customFullPrompt: null
+                    customFullPrompt: null,
+                    aspectRatio: '1:1',
+                    isModifying: false
                 }));
                 setScenarios(prev => [...prev, ...newScenarios]);
                 setInputMode('manual');
             }
         } catch (e) {
             console.error(e);
-            alert("שגיאה ביצירת רשימה");
+            addToast("שגיאה ביצירת רשימה", 'error');
         } finally {
             setIsAiLoading(false);
         }
@@ -249,7 +417,6 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
 
         const finalPrompt = constructPrompt(scenarioData);
         
-        // Build parts: 1 Text Prompt + N Images
         const parts = [
             { text: finalPrompt },
             ...imgsToSend.map(img => ({
@@ -259,10 +426,14 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
-            contents: { parts }
+            contents: { parts },
+            config: {
+                imageConfig: {
+                    aspectRatio: scenarioData.aspectRatio || "1:1"
+                }
+            }
         });
 
-        // Iterate through all parts to find the image part
         const candidates = response.candidates;
         if (candidates && candidates.length > 0) {
             for (const part of candidates[0].content.parts) {
@@ -275,8 +446,64 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
         throw new Error('No image generated');
     };
 
+    // --- Modify Generated Image ---
+    const modifyGeneratedImage = async (id: number, instruction: string) => {
+        if (!instruction.trim()) return;
+        
+        const scenario = scenarios.find(s => s.id === id);
+        if (!scenario || !scenario.resultImage) return;
+
+        setIsModifyingGlobal(true);
+        // CHANGE: Do NOT change status to 'processing', instead set isModifying: true to keep card open
+        setScenarios(prev => prev.map(s => s.id === id ? { ...s, isModifying: true } : s));
+
+        try {
+            const base64Data = scenario.resultImage.split(',')[1];
+            
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-image',
+                contents: {
+                    parts: [
+                        { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
+                        { text: instruction }
+                    ]
+                }
+            });
+
+            let newImageUrl = null;
+            const candidates = response.candidates;
+            if (candidates && candidates.length > 0) {
+                for (const part of candidates[0].content.parts) {
+                    if (part.inlineData) {
+                        newImageUrl = `data:image/jpeg;base64,${part.inlineData.data}`;
+                        break;
+                    }
+                }
+            }
+
+            if (newImageUrl) {
+                // Update image, clear isModifying, keep status as approval_pending (or whatever it was)
+                setScenarios(prev => prev.map(s => s.id === id ? { ...s, isModifying: false, resultImage: newImageUrl } : s));
+                setModificationPrompt(''); // Clear input
+                addToast("התמונה עודכנה בהצלחה!", 'success');
+            } else {
+                throw new Error("No image returned from modification");
+            }
+
+        } catch (e) {
+            console.error("Modification Error", e);
+            addToast("שגיאה בעריכת התמונה: " + (e instanceof Error ? e.message : ''), 'error');
+            setScenarios(prev => prev.map(s => s.id === id ? { ...s, isModifying: false } : s));
+        } finally {
+            setIsModifyingGlobal(false);
+        }
+    };
+
     const processQueue = async () => {
-        if (activeImageIds.length === 0) return alert("נא לבחור לפחות תמונת מקור אחת");
+        if (activeImageIds.length === 0) {
+            addToast("נא לבחור לפחות תמונת מקור אחת מהגלריה", 'error');
+            return;
+        }
         if (isProcessing) return; 
         
         setIsProcessing(true);
@@ -284,8 +511,14 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
     };
 
     const handleIndividualGenerate = async (id: number) => {
-        if (activeImageIds.length === 0) return alert("נא לבחור לפחות תמונת מקור אחת");
-        if (isProcessing) return alert("המערכת עסוקה בעיבוד רשימה");
+        if (activeImageIds.length === 0) {
+            addToast("נא לבחור לפחות תמונת מקור אחת מהגלריה", 'error');
+            return;
+        }
+        if (isProcessing) {
+            addToast("המערכת עסוקה בעיבוד רשימה", 'info');
+            return;
+        }
         
         const item = scenarios.find(s => s.id === id);
         if (!item) return;
@@ -294,7 +527,8 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
         
         try {
             const url = await generateImageCall(item);
-            setScenarios(prev => prev.map(s => s.id === id ? { ...s, status: 'completed', resultImage: url } : s));
+            // CHANGE: Set status to 'approval_pending' to allow modification immediately
+            setScenarios(prev => prev.map(s => s.id === id ? { ...s, status: 'approval_pending', resultImage: url } : s));
         } catch (e) {
             console.error(e);
             setScenarios(prev => prev.map(s => s.id === id ? { ...s, status: 'error' } : s));
@@ -303,7 +537,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
 
     // Queue Effect
     useEffect(() => {
-        if (isProcessing && !isPausedForApproval && !editModalData) {
+        if (isProcessing && !isPausedForApproval && !editModalData && !isModifyingGlobal) {
             const nextItem = scenarios.find(s => s.isSelected && s.status === 'idle');
             
             if (nextItem) {
@@ -312,7 +546,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                     try {
                         const url = await generateImageCall(nextItem);
                         setScenarios(prev => prev.map(s => s.id === nextItem.id ? { ...s, status: 'approval_pending', resultImage: url } : s));
-                        setIsPausedForApproval(true); // PAUSE HERE
+                        setIsPausedForApproval(true);
                         setCurrentPendingId(nextItem.id);
                     } catch (e) {
                         console.error(e);
@@ -323,14 +557,18 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                 processItem();
             } else {
                 setIsProcessing(false);
+                if (scenarios.some(s => s.isSelected && s.status === 'completed')) {
+                    addToast("תהליך העיבוד הסתיים!", 'success');
+                }
             }
         }
-    }, [scenarios, isProcessing, isPausedForApproval, editModalData, userImages, activeImageIds]); // Added deps to fix exhaustive-deps
+    }, [scenarios, isProcessing, isPausedForApproval, editModalData, userImages, activeImageIds, selectedTemplate, isModifyingGlobal]); 
 
     const stopProcessing = () => {
         setIsProcessing(false);
         setIsPausedForApproval(false);
         setCurrentPendingId(null);
+        addToast("תהליך העיבוד נעצר", 'info');
     };
 
     const handleApprove = (id: number) => {
@@ -355,6 +593,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
             location: editModalData.location,
             additionalDetails: editModalData.additionalDetails,
             customFullPrompt: editModalData.customFullPrompt,
+            aspectRatio: editModalData.aspectRatio,
             status: 'idle',
             resultImage: null
         } : s));
@@ -362,18 +601,213 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
         setIsPausedForApproval(false); 
     };
 
+    const exitToSelection = () => {
+        // Removed window.confirm for faster navigation based on feedback
+        setSelectedTemplate(null);
+        setScenarios([]);
+        setUserImages([]);
+        setActiveImageIds([]);
+    };
+
+    // --- RENDER: SELECTION SCREEN ---
+    if (!selectedTemplate) {
+        return (
+            <div className="min-h-screen bg-gray-50 font-heebo">
+                <header className="bg-gradient-to-r from-yellow-500 to-orange-600 text-white p-8 pb-16 shadow-xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+                    <div className="max-w-7xl mx-auto relative z-10 text-center">
+                        <div className="flex justify-center mb-4">
+                            <div className="bg-white/20 p-3 rounded-full border border-white/20 backdrop-blur">
+                                <Icon name="Sparkles" size={32} className="text-white" />
+                            </div>
+                        </div>
+                        <h1 className="text-4xl md:text-5xl font-bold mb-4">סטודיו AI PRO</h1>
+                        <p className="text-xl text-yellow-50 max-w-2xl mx-auto">בחר תבנית, העלה תמונה, וה-AI ישלב אותך בסצינות מדהימות.</p>
+                    </div>
+                </header>
+
+                <main className="max-w-7xl mx-auto -mt-8 px-4 pb-20 space-y-8">
+                    
+                    {/* Default Templates */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {DEFAULT_TEMPLATES.map(template => (
+                            <button 
+                                key={template.id}
+                                onClick={() => setSelectedTemplate(template)}
+                                className="group bg-white rounded-2xl shadow-lg border border-gray-100 p-6 text-right hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 relative overflow-hidden flex flex-col h-full"
+                            >
+                                <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${template.colorFrom} ${template.colorTo}`}></div>
+                                
+                                <div className="flex items-start justify-between mb-4">
+                                    <div className={`p-3 rounded-xl bg-gradient-to-br ${template.colorFrom} ${template.colorTo} text-white shadow-md group-hover:scale-110 transition-transform`}>
+                                        <Icon name={template.iconName} size={28} />
+                                    </div>
+                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400">
+                                        <Icon name="ArrowRight" />
+                                    </div>
+                                </div>
+                                
+                                <h3 className="text-xl font-bold text-gray-800 mb-2">{template.title}</h3>
+                                <p className="text-gray-500 text-sm leading-relaxed mb-6 flex-grow">{template.description}</p>
+                                
+                                <div className="mt-auto w-full bg-gray-50 text-gray-600 font-bold py-3 rounded-lg group-hover:bg-gray-800 group-hover:text-white transition-colors flex items-center justify-center gap-2">
+                                    התחל ליצור
+                                </div>
+                            </button>
+                        ))}
+
+                        {/* Custom Templates Render */}
+                        {customTemplates.map(template => (
+                             <button 
+                             key={template.id}
+                             onClick={() => setSelectedTemplate(template)}
+                             className="group bg-white rounded-2xl shadow-lg border-2 border-dashed border-gray-300 p-6 text-right hover:border-gray-500 hover:shadow-2xl transition-all duration-300 relative overflow-hidden flex flex-col h-full"
+                         >
+                             <div className="absolute top-2 left-2 flex gap-2 z-10">
+                                 <div 
+                                     onClick={(e) => deleteTemplate(e, template.id)} 
+                                     className="bg-gray-200 hover:bg-red-500 hover:text-white p-1.5 rounded-full transition"
+                                 >
+                                     <Icon name="Trash2" size={14} />
+                                 </div>
+                             </div>
+
+                             <div className="flex items-start justify-between mb-4">
+                                 <div className={`p-3 rounded-xl bg-gradient-to-br ${template.colorFrom} ${template.colorTo} text-white shadow-md`}>
+                                     <Icon name={template.iconName} size={28} />
+                                 </div>
+                                 <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">מותאם אישית</span>
+                             </div>
+                             
+                             <h3 className="text-xl font-bold text-gray-800 mb-2">{template.title}</h3>
+                             <p className="text-gray-500 text-sm leading-relaxed mb-6 flex-grow truncate">{template.description}</p>
+                             
+                             <div className="mt-auto w-full bg-gray-800 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2">
+                                 הפעל תבנית
+                             </div>
+                         </button>
+                        ))}
+
+                        {/* Create New Template Card */}
+                        <button 
+                            onClick={() => setIsCreatingTemplate(true)}
+                            className="bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300 hover:border-yellow-500 hover:bg-yellow-50 p-6 flex flex-col items-center justify-center text-center gap-4 transition-all group min-h-[250px]"
+                        >
+                            <div className="p-4 bg-white rounded-full shadow-sm group-hover:scale-110 transition-transform">
+                                <Icon name="Plus" size={32} className="text-gray-400 group-hover:text-yellow-500" />
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-600 group-hover:text-gray-800">צור תבנית חדשה</h3>
+                            <p className="text-xs text-gray-400">הגדר פרומפט קבוע משלך לשימוש חוזר</p>
+                        </button>
+                    </div>
+
+                    {/* Create Template Modal */}
+                    {isCreatingTemplate && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm fade-in">
+                            <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl relative">
+                                <button onClick={() => setIsCreatingTemplate(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                                    <Icon name="XCircle" size={24}/>
+                                </button>
+                                
+                                {/* Moved Wand Icon here */}
+                                <div className="absolute top-4 left-4 text-yellow-500">
+                                    <Icon name="Wand2" size={24}/>
+                                </div>
+                                
+                                <h2 className="text-xl font-bold mb-4">
+                                     יצירת תבנית חדשה
+                                </h2>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-sm font-bold text-gray-700 block mb-1">שם התבנית</label>
+                                        <input 
+                                            type="text" 
+                                            value={newTemplateForm.title}
+                                            onChange={(e) => setNewTemplateForm({...newTemplateForm, title: e.target.value})}
+                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
+                                            placeholder="לדוגמה: צילום בחוף הים"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-bold text-gray-700 block mb-1">תיאור קצר</label>
+                                        <input 
+                                            type="text" 
+                                            value={newTemplateForm.description}
+                                            onChange={(e) => setNewTemplateForm({...newTemplateForm, description: e.target.value})}
+                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
+                                            placeholder="תיאור שיופיע בכרטיסיה"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-bold text-gray-700 block mb-1">תבנית הפרומפט (באנגלית)</label>
+                                        <p className="text-xs text-gray-500 mb-2">השתמש בסוגריים מסולסלים כדי להוסיף את המשתנים: <span className="font-mono bg-gray-100 px-1 rounded">{`{celebrity}`}</span>, <span className="font-mono bg-gray-100 px-1 rounded">{`{location}`}</span>, <span className="font-mono bg-gray-100 px-1 rounded">{`{phone}`}</span>.</p>
+                                        <textarea 
+                                            value={newTemplateForm.userTemplateString}
+                                            onChange={(e) => setNewTemplateForm({...newTemplateForm, userTemplateString: e.target.value})}
+                                            className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none font-mono text-sm bg-white text-gray-900"
+                                        ></textarea>
+                                    </div>
+
+                                    <button 
+                                        onClick={handleSaveTemplate}
+                                        className="w-full bg-black text-white py-3 rounded-lg font-bold hover:bg-gray-800 transition"
+                                    >
+                                        שמור תבנית
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* TOAST CONTAINER FOR SELECTION SCREEN */}
+                     <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+                        {toasts.map(toast => (
+                            <div 
+                                key={toast.id} 
+                                onClick={() => removeToast(toast.id)}
+                                className={`
+                                    pointer-events-auto shadow-2xl rounded-lg p-4 text-white min-w-[300px] flex items-center justify-between gap-3 cursor-pointer
+                                    animate-in slide-in-from-bottom-5 fade-in duration-300
+                                    ${toast.type === 'error' ? 'bg-red-600' : toast.type === 'success' ? 'bg-green-600' : 'bg-gray-800'}
+                                `}
+                            >
+                                <span className="font-bold text-sm">{toast.message}</span>
+                                <Icon name="XCircle" size={16} className="opacity-70 hover:opacity-100"/>
+                            </div>
+                        ))}
+                    </div>
+                </main>
+
+                <footer className="text-center text-gray-400 text-sm py-8">
+                    Powered by Google Gemini 2.5
+                </footer>
+            </div>
+        );
+    }
+
+    // --- RENDER: GENERATOR SCREEN (Existing UI) ---
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
-            <header className="bg-gradient-to-l from-yellow-500 to-yellow-700 text-white p-6 shadow-lg sticky top-0 z-20">
+            <header className={`bg-gradient-to-l ${selectedTemplate.colorFrom} ${selectedTemplate.colorTo} text-white p-6 shadow-lg sticky top-0 z-20`}>
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold flex items-center gap-2">
-                            <Icon name="Camera" /> מחולל סלפי PRO
-                        </h1>
-                        <p className="text-yellow-100 opacity-90 text-sm mt-1">יצירה מרובה • AI אוטומטי • בקרת איכות</p>
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={exitToSelection}
+                            className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition backdrop-blur cursor-pointer z-50"
+                            title="חזרה לתפריט ראשי"
+                        >
+                            <Icon name="Home" size={24} />
+                        </button>
+                        <div>
+                            <h1 className="text-2xl font-bold flex items-center gap-2">
+                                <Icon name={selectedTemplate.iconName} /> {selectedTemplate.title}
+                            </h1>
+                            <p className="text-white/80 text-sm mt-1 opacity-90">מחולל סלפי AI PRO</p>
+                        </div>
                     </div>
-                    <div className="bg-black/20 px-4 py-2 rounded-lg">
-                        <span className="text-sm font-bold">מצב מערכת: </span>
+                    <div className="bg-black/20 px-4 py-2 rounded-lg backdrop-blur">
+                        <span className="text-sm font-bold">מצב: </span>
                         <span className={`font-bold ${isProcessing ? (isPausedForApproval ? 'text-blue-200' : 'text-green-300 animate-pulse') : 'text-gray-200'}`}>
                             {isProcessing ? (isPausedForApproval ? 'ממתין לאישור' : 'מעבד...') : 'מוכן'}
                         </span>
@@ -392,13 +826,18 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                             <Icon name="Upload" size={18} /> 1. תמונות מקור (גלריה)
                         </h2>
                         
-                        <div className="relative border-2 border-yellow-400 rounded-xl bg-gray-50 h-56 flex flex-col items-center justify-center text-center overflow-hidden mb-4 shadow-sm">
+                        <div className={`relative border-2 border-dashed rounded-xl h-56 flex flex-col items-center justify-center text-center overflow-hidden mb-4 shadow-sm transition-all duration-300 group
+                            ${selectedImages.length > 0 
+                                ? 'border-transparent bg-gray-50' 
+                                : 'border-gray-300 bg-gray-50 hover:border-yellow-500 hover:bg-yellow-50'
+                            }`}
+                        >
                             {selectedImages.length > 0 ? (
                                 <div className="w-full h-full p-2 grid gap-1 auto-rows-fr" style={{ 
                                     gridTemplateColumns: selectedImages.length === 1 ? '1fr' : 'repeat(2, 1fr)' 
                                 }}>
                                     {selectedImages.slice(0, 4).map((img, idx) => (
-                                        <div key={idx} className="relative w-full h-full overflow-hidden rounded-md border border-yellow-300">
+                                        <div key={idx} className="relative w-full h-full overflow-hidden rounded-md border border-gray-200">
                                             <img src={img.preview} className="w-full h-full object-cover" alt="Selected" />
                                             {idx === 3 && selectedImages.length > 4 && (
                                                 <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white font-bold">
@@ -409,12 +848,12 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                                     ))}
                                 </div>
                             ) : (
-                                <div className="flex flex-col items-center text-gray-400">
-                                    <Icon name="ImageIcon" size={48} className="mb-2 opacity-50"/>
-                                    <span className="text-sm">לא נבחרו תמונות</span>
+                                <div className="flex flex-col items-center text-gray-400 transition-colors">
+                                    <Icon name="ImageIcon" size={48} className="mb-2 opacity-50 group-hover:text-yellow-500 group-hover:scale-110 transition-transform"/>
+                                    <span className="text-sm font-medium text-gray-400">לא נבחרו תמונות</span>
                                 </div>
                             )}
-                            {selectedImages.length > 0 && <div className="absolute bottom-2 right-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded shadow-md font-bold">{selectedImages.length} נבחרו</div>}
+                            {selectedImages.length > 0 && <div className="absolute bottom-2 right-2 bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-md font-bold">{selectedImages.length} נבחרו</div>}
                         </div>
 
                         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -454,7 +893,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                                 );
                             })}
                         </div>
-                        <p className="text-xs text-gray-400 mt-1">לחץ על תמונות כדי לסמן אותן (ניתן לבחור כמה). כולן ישלחו ל-AI לשיפור הדיוק.</p>
+                        <p className="text-xs text-gray-400 mt-1">לחץ על תמונות כדי לסמן אותן. התמונות המסומנות ישמשו כרפרנס ליצירה.</p>
                     </div>
 
                     {/* 2. Scenarios Input */}
@@ -464,8 +903,8 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                         </h2>
                         
                         <div className="flex bg-gray-100 p-1 rounded-lg mb-4">
-                            <button onClick={() => setInputMode('manual')} className={`flex-1 py-2 text-sm font-bold rounded-md transition ${inputMode === 'manual' ? 'bg-white shadow text-yellow-600' : 'text-gray-500'}`}>ידני</button>
-                            <button onClick={() => setInputMode('bulk')} className={`flex-1 py-2 text-sm font-bold rounded-md transition ${inputMode === 'bulk' ? 'bg-white shadow text-yellow-600' : 'text-gray-500'}`}>רשימה / AI</button>
+                            <button onClick={() => setInputMode('manual')} className={`flex-1 py-2 text-sm font-bold rounded-md transition ${inputMode === 'manual' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`}>ידני</button>
+                            <button onClick={() => setInputMode('bulk')} className={`flex-1 py-2 text-sm font-bold rounded-md transition ${inputMode === 'bulk' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`}>רשימה / AI</button>
                         </div>
 
                         {inputMode === 'manual' ? (
@@ -479,7 +918,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                                     <input type="text" value={currentForm.location} onChange={(e) => setCurrentForm({...currentForm, location: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900" placeholder="Last Comic Standing" />
                                 </div>
                                 <div>
-                                    <label className="text-xs font-semibold text-gray-500">טלפון</label>
+                                    <label className="text-xs font-semibold text-gray-500">טלפון / פריט</label>
                                     <input type="text" value={currentForm.phone} onChange={(e) => setCurrentForm({...currentForm, phone: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500" disabled />
                                 </div>
                                 <button onClick={addScenario} disabled={!currentForm.celebrity} className="w-full bg-gray-800 text-white py-2 rounded-lg hover:bg-gray-700 flex justify-center gap-2">
@@ -488,10 +927,41 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                             </div>
                         ) : (
                             <div className="space-y-4 fade-in">
-                                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 relative">
                                     <label className="text-xs font-bold text-blue-800 mb-1 block flex items-center gap-1"><Icon name="Wand2" size={12}/> AI מחולל רעיונות</label>
-                                    <div className="flex gap-2">
-                                        <input type="text" value={aiTopic} onChange={(e) => setAiTopic(e.target.value)} className="flex-1 p-2 border border-gray-300 rounded text-sm bg-white text-gray-900" placeholder="נושא: גיבורי על, זמרים..." />
+                                    <div className="flex gap-2 relative" ref={dropdownRef}>
+                                        <div className="relative flex-1">
+                                            <input 
+                                                type="text" 
+                                                value={aiTopic} 
+                                                onChange={(e) => {
+                                                    setAiTopic(e.target.value);
+                                                    setShowTopicDropdown(true);
+                                                }}
+                                                onFocus={() => setShowTopicDropdown(true)}
+                                                className="w-full p-2 border border-gray-300 rounded text-sm bg-white text-gray-900 focus:ring-2 focus:ring-blue-300 outline-none" 
+                                                placeholder="נושא: גיבורי על, זמרים..." 
+                                            />
+                                            {showTopicDropdown && (
+                                                <ul className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                                                    {SUGGESTED_TOPICS.filter(t => t.includes(aiTopic)).map((topic, idx) => (
+                                                        <li 
+                                                            key={idx} 
+                                                            onClick={() => {
+                                                                setAiTopic(topic);
+                                                                setShowTopicDropdown(false);
+                                                            }}
+                                                            className="px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-none"
+                                                        >
+                                                            {topic}
+                                                        </li>
+                                                    ))}
+                                                    {SUGGESTED_TOPICS.filter(t => t.includes(aiTopic)).length === 0 && (
+                                                        <li className="px-3 py-2 text-xs text-gray-400">אין הצעות מתאימות</li>
+                                                    )}
+                                                </ul>
+                                            )}
+                                        </div>
                                         <button onClick={generateAiSuggestions} disabled={isAiLoading || !aiTopic} className="bg-blue-600 text-white px-3 rounded text-sm font-bold">
                                             {isAiLoading ? <Icon name="Loader2" className="animate-spin"/> : 'צור'}
                                         </button>
@@ -542,8 +1012,8 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                             ) : (
                                 <button 
                                     onClick={processQueue} 
-                                    disabled={scenarios.filter(s => s.isSelected && s.status === 'idle').length === 0 || selectedImages.length === 0}
-                                    className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-8 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={scenarios.filter(s => s.isSelected && s.status === 'idle').length === 0}
+                                    className="bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700 text-white px-8 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <Icon name="Play" /> צור נבחרים
                                 </button>
@@ -562,7 +1032,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
 
                         {scenarios.map((item, index) => (
                             <div key={item.id} className={`relative bg-white rounded-xl shadow-sm border transition-all duration-300
-                                ${item.status === 'approval_pending' ? 'border-blue-500 ring-4 ring-blue-100 scale-[1.02] z-10' : 'border-gray-100 hover:border-gray-300'}
+                                ${item.status === 'approval_pending' ? 'border-yellow-500 ring-4 ring-yellow-100 scale-[1.02] z-10' : 'border-gray-100 hover:border-gray-300'}
                             `}>
                                 <div className="p-4 flex flex-col md:flex-row gap-4 items-start md:items-center">
                                     
@@ -573,7 +1043,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                                             checked={item.isSelected} 
                                             onChange={() => toggleSelection(item.id)}
                                             disabled={isProcessing}
-                                            className="w-5 h-5 rounded text-yellow-500 focus:ring-yellow-400 cursor-pointer"
+                                            className="w-5 h-5 rounded accent-yellow-500 cursor-pointer"
                                         />
                                         <div className="w-8">
                                             {item.status === 'completed' && <Icon name="CheckCircle" className="text-green-500" />}
@@ -594,19 +1064,37 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                                         {item.additionalDetails && <p className="text-xs text-yellow-600 mt-1 truncate max-w-[200px]">+ {item.additionalDetails}</p>}
                                     </div>
 
+                                    {/* Aspect Ratio Selector */}
+                                    <div className="flex flex-col items-center">
+                                         <label className="text-[10px] font-bold text-gray-400 mb-0.5">Ratio</label>
+                                         <select
+                                            value={item.aspectRatio || "1:1"}
+                                            onChange={(e) => updateScenarioRatio(item.id, e.target.value)}
+                                            disabled={isProcessing || item.status === 'processing' || item.isModifying}
+                                            className="text-xs bg-gray-50 border border-gray-200 rounded p-1 outline-none focus:border-yellow-500 text-gray-700 font-mono cursor-pointer"
+                                        >
+                                            <option value="1:1">1:1</option>
+                                            <option value="16:9">16:9</option>
+                                            <option value="9:16">9:16</option>
+                                            <option value="4:3">4:3</option>
+                                            <option value="3:4">3:4</option>
+                                        </select>
+                                    </div>
+
                                     {/* Item Actions */}
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 border-r border-gray-100 pr-2 mr-2">
                                         
                                         <Tooltip content={constructPrompt(item)}>
-                                            <div className="p-2 text-gray-400 hover:text-blue-500 cursor-help transition">
+                                            <div className="p-2 text-gray-400 hover:text-yellow-500 cursor-help transition">
                                                 <Icon name="Info" size={18} />
                                             </div>
                                         </Tooltip>
 
                                         <button 
                                             onClick={() => openEditModal(item)} 
-                                            className="p-2 text-gray-400 hover:text-blue-600 transition" 
+                                            className="p-2 text-gray-400 hover:text-yellow-600 transition" 
                                             title="ערוך פרומפט ספציפי"
+                                            disabled={item.isModifying}
                                         >
                                             <Icon name="FileText" size={18} />
                                         </button>
@@ -631,25 +1119,33 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
 
                                 {/* --- APPROVAL AREA --- */}
                                 {item.status === 'approval_pending' && item.resultImage && (
-                                    <div className="bg-blue-50 p-4 rounded-b-xl border-t border-blue-100 animate-in slide-in-from-top-2">
+                                    <div className="bg-yellow-50 p-4 rounded-b-xl border-t border-yellow-100 animate-in slide-in-from-top-2">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             
                                             {/* Image with Overlays */}
                                             <div className="relative group rounded-lg overflow-hidden border-2 border-white shadow-md">
                                                 <img src={item.resultImage} className="w-full h-auto object-cover" alt="Result" />
                                                 
+                                                {/* Modification Loader Overlay */}
+                                                {item.isModifying && (
+                                                    <div className="absolute inset-0 bg-white/50 backdrop-blur-sm flex flex-col items-center justify-center z-20">
+                                                        <Icon name="Loader2" className="animate-spin text-yellow-600 mb-2" size={32} />
+                                                        <span className="text-yellow-800 font-bold text-sm shadow-sm">מעדכן תמונה...</span>
+                                                    </div>
+                                                )}
+
                                                 <div className="absolute top-2 left-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <a 
                                                         href={item.resultImage} 
                                                         download={`selfie_${item.celebrity}.jpg`}
-                                                        className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-blue-600 shadow-sm"
+                                                        className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
                                                         title="הורדה"
                                                     >
                                                         <Icon name="Download" size={16}/>
                                                     </a>
                                                     <button 
                                                         onClick={() => setFullscreenImage(item.resultImage)}
-                                                        className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-blue-600 shadow-sm"
+                                                        className="bg-white/80 p-2 rounded-full hover:bg-white text-gray-800 hover:text-yellow-600 shadow-sm"
                                                         title="הגדל"
                                                     >
                                                         <Icon name="Maximize" size={16}/>
@@ -657,23 +1153,51 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                                                 </div>
                                             </div>
 
-                                            <div className="flex flex-col justify-center gap-3">
-                                                <h4 className="font-bold text-blue-900">ממתין לאישור שלך</h4>
-                                                <p className="text-sm text-blue-700">האם התמונה תקינה? ניתן לאשר או לערוך ולנסות שוב.</p>
+                                            <div className="flex flex-col justify-between gap-3">
+                                                <div>
+                                                    <h4 className="font-bold text-yellow-900 mb-1">ממתין לאישור שלך</h4>
+                                                    <p className="text-sm text-yellow-700 mb-2">האם התמונה תקינה? ניתן לאשר, לערוך מחדש, או לשנות אלמנטים בתמונה הקיימת.</p>
+                                                    
+                                                    {/* Image Modifier Input */}
+                                                    <div className="bg-white/80 p-2 rounded-lg border border-yellow-200 mb-3">
+                                                        <label className="text-xs font-bold text-yellow-800 mb-1 block">שינוי התמונה (Image Editing)</label>
+                                                        <div className="flex gap-2">
+                                                            <input 
+                                                                type="text"
+                                                                value={modificationPrompt}
+                                                                onChange={(e) => setModificationPrompt(e.target.value)}
+                                                                placeholder="לדוגמה: תוסיף כובע, תוריד את העץ..."
+                                                                className="flex-1 p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
+                                                                disabled={item.isModifying}
+                                                            />
+                                                            <button 
+                                                                onClick={() => modifyGeneratedImage(item.id, modificationPrompt)}
+                                                                disabled={!modificationPrompt || item.isModifying || isModifyingGlobal}
+                                                                className="bg-yellow-200 hover:bg-yellow-300 disabled:opacity-50 disabled:cursor-not-allowed text-yellow-800 px-3 rounded font-bold text-sm"
+                                                            >
+                                                                {item.isModifying ? <Icon name="Loader2" className="animate-spin" size={14}/> : 'שנה'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 
-                                                <button 
-                                                    onClick={() => handleApprove(item.id)}
-                                                    className="bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold shadow-md flex items-center justify-center gap-2 w-full"
-                                                >
-                                                    <Icon name="CheckCircle" /> אשר והמשך לבא
-                                                </button>
-                                                
-                                                <button 
-                                                    onClick={() => openEditModal(item)}
-                                                    className="bg-white hover:bg-gray-50 text-blue-600 border border-blue-200 py-3 rounded-lg font-bold flex items-center justify-center gap-2 w-full"
-                                                >
-                                                    <Icon name="Edit" /> ערוך / נסה שוב
-                                                </button>
+                                                <div className="space-y-2">
+                                                    <button 
+                                                        onClick={() => handleApprove(item.id)}
+                                                        className="bg-yellow-600 hover:bg-yellow-700 text-white py-3 rounded-lg font-bold shadow-md flex items-center justify-center gap-2 w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        disabled={item.isModifying}
+                                                    >
+                                                        <Icon name="CheckCircle" /> אשר והמשך לבא
+                                                    </button>
+                                                    
+                                                    <button 
+                                                        onClick={() => openEditModal(item)}
+                                                        className="bg-white hover:bg-gray-50 text-yellow-600 border border-yellow-200 py-3 rounded-lg font-bold flex items-center justify-center gap-2 w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        disabled={item.isModifying}
+                                                    >
+                                                        <Icon name="Edit" /> צור מחדש (פרומפט מקורי)
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -681,7 +1205,7 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
 
                                 {/* Completed Image Preview */}
                                 {item.status === 'completed' && item.resultImage && (
-                                    <div className="px-4 pb-4">
+                                    <div className="px-4 pb-4 flex items-center justify-between">
                                         <div className="relative group w-24 h-24">
                                             <img src={item.resultImage} className="w-full h-full object-cover rounded-lg border border-gray-200 shadow-sm" alt="Completed" />
                                             
@@ -703,6 +1227,13 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                                                 </button>
                                             </div>
                                         </div>
+                                        
+                                        <button 
+                                            onClick={() => setScenarios(prev => prev.map(s => s.id === item.id ? { ...s, status: 'approval_pending' } : s))}
+                                            className="text-yellow-600 hover:text-yellow-700 text-sm font-bold flex items-center gap-1 bg-yellow-50 px-3 py-1 rounded-full border border-yellow-200 transition"
+                                        >
+                                            <Icon name="Wand2" size={14} /> ערוך תמונה
+                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -810,6 +1341,24 @@ Show the attached person(smiling with closed lips) on the left and the actor - h
                     </button>
                 </div>
             )}
+
+            {/* --- TOAST CONTAINER FOR GENERATOR SCREEN --- */}
+            <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+                {toasts.map(toast => (
+                    <div 
+                        key={toast.id} 
+                        onClick={() => removeToast(toast.id)}
+                        className={`
+                            pointer-events-auto shadow-2xl rounded-lg p-4 text-white min-w-[300px] flex items-center justify-between gap-3 cursor-pointer
+                            animate-in slide-in-from-bottom-5 fade-in duration-300
+                            ${toast.type === 'error' ? 'bg-red-600' : toast.type === 'success' ? 'bg-green-600' : 'bg-gray-800'}
+                        `}
+                    >
+                         <span className="font-bold text-sm">{toast.message}</span>
+                         <Icon name="XCircle" size={16} className="opacity-70 hover:opacity-100"/>
+                    </div>
+                ))}
+            </div>
 
         </div>
     );

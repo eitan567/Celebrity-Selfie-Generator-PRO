@@ -17,11 +17,32 @@ export interface Scenario {
     resultImage: string | null;
     additionalDetails: string;
     customFullPrompt: string | null;
+    aspectRatio: string; // "1:1" | "16:9" | "9:16" | "4:3" | "3:4"
     calculatedPrompt?: string; // used for edit modal temporary state
+    isModifying?: boolean; // New flag for UI loading state during modification
+}
+
+export interface PromptTemplate {
+    id: string;
+    title: string;
+    description: string;
+    iconName: string;
+    colorFrom: string;
+    colorTo: string;
+    // Built-in templates use a function, Custom templates use a string with placeholders
+    basePromptGenerator?: (celebrity: string, location: string, phone: string, details?: string) => string;
+    userTemplateString?: string;
+    isCustom?: boolean;
 }
 
 export interface EditModalData extends Scenario {
     calculatedPrompt?: string;
+}
+
+export interface ToastMessage {
+    id: number;
+    message: string;
+    type: 'success' | 'error' | 'info';
 }
 
 export interface TooltipProps {

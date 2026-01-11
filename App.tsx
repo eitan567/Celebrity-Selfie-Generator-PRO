@@ -1277,10 +1277,10 @@ function App() {
                                                         {!item.isExpanded && (
                                                             <div 
                                                                 onClick={() => toggleExpand(item.id)}
-                                                                className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-white via-white/80 to-transparent flex items-end justify-center pb-4 cursor-pointer hover:via-white/90 transition-all group/expand"
+                                                                className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-yellow-600 via-yellow-500/70 to-transparent flex items-end justify-center pb-6 cursor-pointer hover:via-yellow-500/80 transition-all group/expand"
                                                             >
-                                                                <span className="bg-white/80 backdrop-blur px-4 py-1.5 rounded-full text-sm font-bold text-gray-800 flex items-center gap-1 shadow-sm border border-gray-200 group-hover/expand:scale-105 transition-transform">
-                                                                    <Icon name="ChevronDown" size={16} /> הצג תמונה מלאה
+                                                                <span className="bg-white/95 backdrop-blur-sm px-6 py-2 rounded-full text-sm font-bold text-yellow-900 flex items-center gap-2 shadow-xl border border-yellow-100 group-hover/expand:scale-105 transition-transform">
+                                                                    <Icon name="ChevronDown" size={18} /> הצג תמונה מלאה
                                                                 </span>
                                                             </div>
                                                         )}
@@ -1289,7 +1289,7 @@ function App() {
                                                         {item.isExpanded && (
                                                              <button 
                                                                 onClick={() => toggleExpand(item.id)}
-                                                                className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur px-4 py-1.5 rounded-full text-sm font-bold text-gray-800 flex items-center gap-1 shadow-md border border-gray-200 hover:bg-white transition"
+                                                                className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-yellow-100/90 backdrop-blur px-6 py-2 rounded-full text-sm font-bold text-yellow-900 flex items-center gap-2 shadow-md border border-yellow-300 hover:bg-white transition"
                                                             >
                                                                 <Icon name="ChevronUp" size={16} /> הקטן תצוגה
                                                             </button>

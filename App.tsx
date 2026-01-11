@@ -75,6 +75,15 @@ const SUGGESTED_TOPICS = [
     "זוכי אוסקר בטקס הפרסים"
 ];
 
+// --- SOCIAL MEDIA RATIO PRESETS ---
+const RATIO_PRESETS = [
+    { label: 'אינסטגרם/כללי (1:1)', value: '1:1', desc: 'פוסט ריבועי קלאסי' },
+    { label: 'אינסטגרם פורטרט (3:4)', value: '3:4', desc: 'מומלץ לפיד (כמו 4:5)' },
+    { label: 'סטורי / Reels (9:16)', value: '9:16', desc: 'מסך מלא לנייד' },
+    { label: 'פייסבוק/לינקדאין (16:9)', value: '16:9', desc: 'פוסט רוחבי' },
+    { label: 'נוף קולנועי (4:3)', value: '4:3', desc: 'סטנדרטי' },
+];
+
 function App() {
     // --- State: View Mode & Templates ---
     const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
@@ -98,6 +107,7 @@ function App() {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [currentPendingId, setCurrentPendingId] = useState<number | null>(null);
     const [inputMode, setInputMode] = useState<'manual' | 'bulk'>('manual');
+    const [globalRatio, setGlobalRatio] = useState<string>("1:1");
     
     const [currentForm, setCurrentForm] = useState({
         celebrity: '',
@@ -266,7 +276,7 @@ function App() {
             resultImage: null,
             additionalDetails: '',
             customFullPrompt: null,
-            aspectRatio: '1:1',
+            aspectRatio: globalRatio, // Use global ratio
             isModifying: false,
             isExpanded: false,
             history: [] // Initialize history
@@ -276,6 +286,13 @@ function App() {
 
     const updateScenarioRatio = (id: number, ratio: string) => {
         setScenarios(prev => prev.map(s => s.id === id ? { ...s, aspectRatio: ratio } : s));
+    };
+
+    const handleGlobalRatioChange = (ratio: string) => {
+        setGlobalRatio(ratio);
+        // Apply to all existing scenarios
+        setScenarios(prev => prev.map(s => ({ ...s, aspectRatio: ratio })));
+        addToast(`יחס התמונה שונה ל-${ratio} עבור כל הרשימה`, 'info');
     };
 
     const toggleSelection = (id: number) => {
@@ -363,7 +380,7 @@ function App() {
                     resultImage: null,
                     additionalDetails: '',
                     customFullPrompt: null,
-                    aspectRatio: '1:1',
+                    aspectRatio: globalRatio, // Use global ratio
                     isModifying: false,
                     isExpanded: false,
                     history: []
@@ -419,7 +436,7 @@ function App() {
                     resultImage: null,
                     additionalDetails: '',
                     customFullPrompt: null,
-                    aspectRatio: '1:1',
+                    aspectRatio: globalRatio, // Use global ratio
                     isModifying: false,
                     isExpanded: false,
                     history: []
@@ -860,7 +877,7 @@ function App() {
                                             type="text" 
                                             value={newTemplateForm.title}
                                             onChange={(e) => setNewTemplateForm({...newTemplateForm, title: e.target.value})}
-                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
+                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 caret-gray-900"
                                             placeholder="לדוגמה: צילום בחוף הים"
                                         />
                                     </div>
@@ -870,7 +887,7 @@ function App() {
                                             type="text" 
                                             value={newTemplateForm.description}
                                             onChange={(e) => setNewTemplateForm({...newTemplateForm, description: e.target.value})}
-                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
+                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 caret-gray-900"
                                             placeholder="תיאור שיופיע בכרטיסיה"
                                         />
                                     </div>
@@ -880,7 +897,7 @@ function App() {
                                         <textarea 
                                             value={newTemplateForm.userTemplateString}
                                             onChange={(e) => setNewTemplateForm({...newTemplateForm, userTemplateString: e.target.value})}
-                                            className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none font-mono text-sm bg-white text-gray-900"
+                                            className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none font-mono text-sm bg-white text-gray-900 caret-gray-900"
                                         ></textarea>
                                     </div>
 
@@ -1046,11 +1063,11 @@ function App() {
                             <div className="space-y-3 fade-in">
                                 <div>
                                     <label className="text-xs font-semibold text-gray-500">מפורסם</label>
-                                    <input type="text" value={currentForm.celebrity} onChange={(e) => setCurrentForm({...currentForm, celebrity: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900" placeholder="Modi Rosenfeld" />
+                                    <input type="text" value={currentForm.celebrity} onChange={(e) => setCurrentForm({...currentForm, celebrity: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 caret-gray-900" placeholder="Modi Rosenfeld" />
                                 </div>
                                 <div>
                                     <label className="text-xs font-semibold text-gray-500">מיקום</label>
-                                    <input type="text" value={currentForm.location} onChange={(e) => setCurrentForm({...currentForm, location: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900" placeholder="Last Comic Standing" />
+                                    <input type="text" value={currentForm.location} onChange={(e) => setCurrentForm({...currentForm, location: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 caret-gray-900" placeholder="Last Comic Standing" />
                                 </div>
                                 <div>
                                     <label className="text-xs font-semibold text-gray-500">טלפון / פריט</label>
@@ -1074,7 +1091,7 @@ function App() {
                                                     setShowTopicDropdown(true);
                                                 }}
                                                 onFocus={() => setShowTopicDropdown(true)}
-                                                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-300 outline-none bg-white text-gray-900" 
+                                                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-300 outline-none bg-white text-gray-900 caret-gray-900" 
                                                 placeholder="נושא: גיבורי על, זמרים..." 
                                             />
                                             {showTopicDropdown && (
@@ -1108,7 +1125,7 @@ function App() {
                                     <textarea 
                                         value={bulkText}
                                         onChange={(e) => setBulkText(e.target.value)}
-                                        className="w-full h-32 p-2 border border-gray-300 rounded-lg text-sm font-mono bg-white text-gray-900"
+                                        className="w-full h-32 p-2 border border-gray-300 rounded-lg text-sm font-mono bg-white text-gray-900 caret-gray-900"
                                         placeholder={`Gal Gadot, Wonder Woman Set\nBrad Pitt, Hollywood Red Carpet\n...`}
                                     ></textarea>
                                     <button 
@@ -1138,6 +1155,24 @@ function App() {
                                 <span>•</span>
                                 <button onClick={() => setScenarios(scenarios.filter(s => !s.isSelected))} className="hover:text-red-500 underline">מחק מסומנים</button>
                             </div>
+                        </div>
+
+                        {/* GLOBAL RATIO SELECTOR */}
+                        <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200 order-last md:order-none">
+                            <span className="text-xs font-bold text-gray-500 px-2 flex items-center gap-1">
+                                <Icon name="LayoutGrid" size={14}/> התאמה לפלטפורמה:
+                            </span>
+                            <select
+                                value={globalRatio}
+                                onChange={(e) => handleGlobalRatioChange(e.target.value)}
+                                className="bg-white text-sm border-none outline-none text-gray-800 font-bold focus:ring-0 cursor-pointer py-1 pr-1 pl-4 rounded shadow-sm hover:bg-gray-100 transition"
+                            >
+                                {RATIO_PRESETS.map((preset) => (
+                                    <option key={preset.value} value={preset.value}>
+                                        {preset.label}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                         
                         <div className="flex gap-2">
@@ -1210,11 +1245,9 @@ function App() {
                                             disabled={isProcessing || item.status === 'processing' || item.isModifying}
                                             className="text-xs bg-gray-50 border border-gray-200 rounded p-1 outline-none focus:border-yellow-500 text-gray-700 font-mono cursor-pointer"
                                         >
-                                            <option value="1:1">1:1</option>
-                                            <option value="16:9">16:9</option>
-                                            <option value="9:16">9:16</option>
-                                            <option value="4:3">4:3</option>
-                                            <option value="3:4">3:4</option>
+                                            {RATIO_PRESETS.map(p => (
+                                                <option key={p.value} value={p.value}>{p.value}</option>
+                                            ))}
                                         </select>
                                     </div>
 
@@ -1348,7 +1381,7 @@ function App() {
                                                                 value={modificationPrompt}
                                                                 onChange={(e) => setModificationPrompt(e.target.value)}
                                                                 placeholder="לדוגמה: תוסיף כובע, תוריד את העץ..."
-                                                                className="flex-1 p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
+                                                                className="flex-1 p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 caret-gray-900"
                                                                 disabled={item.isModifying}
                                                             />
                                                             <button 
@@ -1443,7 +1476,7 @@ function App() {
                                         type="text" 
                                         value={editModalData.celebrity} 
                                         onChange={(e) => setEditModalData({...editModalData, celebrity: e.target.value})}
-                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 caret-gray-900"
                                     />
                                 </div>
                                 <div>
@@ -1452,7 +1485,7 @@ function App() {
                                         type="text" 
                                         value={editModalData.location} 
                                         onChange={(e) => setEditModalData({...editModalData, location: e.target.value})}
-                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 caret-gray-900"
                                     />
                                 </div>
                             </div>
@@ -1466,7 +1499,7 @@ function App() {
                                     type="text" 
                                     value={editModalData.additionalDetails || ''} 
                                     onChange={(e) => setEditModalData({...editModalData, additionalDetails: e.target.value})}
-                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 placeholder-gray-400"
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-gray-900 placeholder-gray-400 caret-gray-900"
                                     placeholder="לדוגמה: תאורה חשוכה, הבעה מופתעת..."
                                 />
                             </div>
@@ -1486,7 +1519,7 @@ function App() {
                                         <textarea 
                                             value={editModalData.customFullPrompt || constructPrompt(editModalData)}
                                             onChange={(e) => setEditModalData({...editModalData, customFullPrompt: e.target.value})}
-                                            className="w-full h-32 p-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-300 outline-none font-mono bg-white text-gray-900"
+                                            className="w-full h-32 p-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-300 outline-none font-mono bg-white text-gray-900 caret-gray-900"
                                         ></textarea>
                                     </div>
                                 )}

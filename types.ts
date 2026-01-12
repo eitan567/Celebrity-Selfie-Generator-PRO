@@ -15,18 +15,23 @@ export interface ImageVersion {
     type: 'initial' | 'edit' | 'regeneration';
 }
 
+export interface PromptTemplateInput {
+    id: string; // e.g., 'historical_era'
+    label: string; // e.g., 'Historical Era / Place'
+    placeholder: string;
+    type: 'text' | 'textarea';
+    disabled?: boolean;
+}
+
 export interface Scenario {
     id: number;
-    celebrity: string;
-    location: string;
-    phone: string;
+    data: { [key: string]: string };
     status: 'idle' | 'processing' | 'approval_pending' | 'completed' | 'error';
     isSelected: boolean;
     resultImage: string | null;
     additionalDetails: string;
     customFullPrompt: string | null;
     aspectRatio: string; // "1:1" | "16:9" | "9:16" | "4:3" | "3:4"
-    calculatedPrompt?: string; // used for edit modal temporary state
     isModifying?: boolean; // New flag for UI loading state during modification
     isExpanded?: boolean; // Flag for image view expansion in the list
     history: ImageVersion[]; // Array to store all generated versions
@@ -39,8 +44,8 @@ export interface PromptTemplate {
     iconName: string;
     colorFrom: string;
     colorTo: string;
-    // Built-in templates use a function, Custom templates use a string with placeholders
-    basePromptGenerator?: (celebrity: string, location: string, phone: string, details?: string) => string;
+    inputs: PromptTemplateInput[]; // Defines the form for this template
+    basePromptGenerator?: (data: { [key: string]: string }) => string;
     userTemplateString?: string;
     isCustom?: boolean;
 }
@@ -56,7 +61,8 @@ export interface ToastMessage {
 }
 
 export interface TooltipProps {
-    content: string;
+    // FIX: Changed content from string to React.ReactNode to allow JSX elements, fixing the type error.
+    content: React.ReactNode;
     children: React.ReactNode;
 }
 

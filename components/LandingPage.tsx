@@ -91,11 +91,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                              <p className="mt-4 text-gray-500">ראה מה המשתמשים שלנו יוצרים עם סטודיו AI PRO.</p>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <GalleryImage src="https://images.pexels.com/photos/18952445/pexels-photo-18952445/free-photo-of-a-man-in-a-suit-and-tie-standing-in-front-of-a-building.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="Man in historical clothing" className="col-span-2 row-span-2" />
-                            <GalleryImage src="https://images.pexels.com/photos/3775087/pexels-photo-3775087.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="Woman in sci-fi outfit" />
-                            <GalleryImage src="https://images.pexels.com/photos/20348671/pexels-photo-20348671/free-photo-of-a-woman-in-a-black-dress-and-sunglasses-posing-for-a-picture.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="Man as a rockstar" />
-                            <GalleryImage src="https://images.pexels.com/photos/15237752/pexels-photo-15237752/free-photo-of-a-woman-in-a-white-dress-is-walking-through-a-field.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="Woman in a fantasy setting" />
-                            <GalleryImage src="https://images.pexels.com/photos/13849117/pexels-photo-13849117.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="Man as a superhero" />
+                            <GalleryImage src="https://images.pexels.com/photos/843700/pexels-photo-843700.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="אישה מצלמת סלפי עם גמל" className="col-span-2 row-span-2" />
+                            <GalleryImage src="https://images.pexels.com/photos/7621955/pexels-photo-7621955.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="אישה בתלבושת תקופתית" />
+                            <GalleryImage src="https://images.pexels.com/photos/3771836/pexels-photo-3771836.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="אישה בשמלת ערב באירוע יוקרתי" />
+                            <GalleryImage src="https://images.pexels.com/photos/5904918/pexels-photo-5904918.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="אישה במדי טייסת" />
+                            <GalleryImage src="https://images.pexels.com/photos/7319113/pexels-photo-7319113.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="אישה בסגנון סייברפאנק עתידני" />
                         </div>
                     </div>
                 </section>

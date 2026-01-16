@@ -27,7 +27,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
         <div className="bg-gray-50 text-gray-800">
             {/* Header */}
             <header className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md shadow-sm z-50">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="px-4 sm:px-6 lg:px-8">
                     <div className="flex items-center justify-between h-16">
                         <div className="flex items-center gap-2">
                              <Icon name="Sparkles" className="text-yellow-500" size={24}/>
@@ -46,7 +46,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             <main className="pt-16">
                 <section className="relative py-20 sm:py-32 bg-gradient-to-br from-yellow-50 to-orange-100 overflow-hidden">
                      <div className="absolute inset-0 bg-grid-slate-900/[0.04] bg-[bottom_1px_center] dark:bg-grid-slate-400/[0.05] dark:bg-bottom_1px_center"></div>
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+                    <div className="px-4 sm:px-6 lg:px-8 text-center relative z-10">
                         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-gray-900 tracking-tight">
                             הפוך כל תמונה ליצירת מופת
                         </h1>
@@ -64,8 +64,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
                  {/* Features Section */}
                 <section id="features" className="py-20 sm:py-24 bg-white">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                        <div className="text-center">
+                    <div className="px-4 sm:px-6 lg:px-8">
+                        <div className="text-center max-w-2xl mx-auto">
                              <h2 className="text-3xl font-bold text-gray-900">כל מה שצריך כדי ליצור תמונות מדהימות</h2>
                              <p className="mt-4 text-gray-500">כלים מתקדמים עם ממשק פשוט ונוח.</p>
                         </div>
@@ -85,8 +85,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
                  {/* Gallery Section */}
                 <section id="gallery" className="py-20 sm:py-24 bg-gray-50">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                         <div className="text-center mb-12">
+                    <div className="px-4 sm:px-6 lg:px-8">
+                         <div className="text-center mb-12 max-w-2xl mx-auto">
                              <h2 className="text-3xl font-bold text-gray-900">הדמיון הוא הגבול היחיד</h2>
                              <p className="mt-4 text-gray-500">ראה מה המשתמשים שלנו יוצרים עם סטודיו AI PRO.</p>
                         </div>
@@ -102,11 +102,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
                  {/* Final CTA */}
                 <section className="bg-white">
-                    <div className="max-w-4xl mx-auto text-center py-16 px-4 sm:py-20 sm:px-6 lg:px-8">
+                    <div className="text-center py-16 px-4 sm:py-20 sm:px-6 lg:px-8">
                         <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
                             <span className="block">מוכן להתחיל ליצור?</span>
                         </h2>
-                        <p className="mt-4 text-lg leading-6 text-gray-500">
+                        <p className="mt-4 text-lg leading-6 text-gray-500 max-w-2xl mx-auto">
                             פתח חשבון בחינם והצטרף לאלפי יוצרים שכבר מגשימים את החזון שלהם.
                         </p>
                         <button onClick={onLogin} className="mt-8 w-full inline-flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-full text-white bg-gray-900 hover:bg-gray-800 sm:w-auto">
@@ -118,7 +118,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
             {/* Footer */}
             <footer className="bg-gray-100 border-t">
-                <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 text-center text-sm text-gray-500">
+                <div className="py-6 px-4 sm:px-6 lg:px-8 text-center text-sm text-gray-500">
                     <p>&copy; {new Date().getFullYear()} סטודיו AI PRO. כל הזכויות שמורות.</p>
                 </div>
             </footer>

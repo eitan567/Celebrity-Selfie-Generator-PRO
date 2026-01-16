@@ -1,3 +1,4 @@
+// FIX: Removed extraneous code that was incorrectly appended to this file. This resolves the parsing and duplicate identifier errors.
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { Icon } from './components/Icons';
@@ -859,7 +860,7 @@ export const Generator: React.FC<GeneratorProps> = ({ user, onLogout }) => {
     if (!selectedTemplate) {
         return (
             <div className="min-h-screen bg-gray-50 font-heebo">
-                <header className="bg-gradient-to-r from-yellow-500 to-orange-600 text-white p-6 shadow-xl flex justify-between items-center">
+                <header className="bg-gradient-to-r from-yellow-500 to-orange-600 text-white px-4 sm:px-6 lg:px-8 shadow-xl flex justify-between items-center h-20">
                     <div className="flex items-center gap-2">
                          <Icon name="Sparkles" size={24} />
                          <span className="font-bold text-xl">סטודיו AI PRO</span>
@@ -869,12 +870,12 @@ export const Generator: React.FC<GeneratorProps> = ({ user, onLogout }) => {
                         <button onClick={onLogout} className="bg-white/20 hover:bg-white/30 text-xs font-bold py-2 px-4 rounded-lg transition">התנתק</button>
                     </div>
                 </header>
-                 <main className="max-w-7xl mx-auto py-12 px-4">
-                     <div className="text-center mb-12">
+                 <main className="py-12 px-4 sm:px-6 lg:px-8">
+                     <div className="text-center mb-12 max-w-4xl mx-auto">
                         <h1 className="text-4xl md:text-5xl font-bold mb-4 text-gray-800">בחר תבנית</h1>
-                        <p className="text-lg text-gray-500 max-w-2xl mx-auto">בחר תבנית, העלה תמונה, וה-AI ישלב אותך בסצינות מדהימות.</p>
+                        <p className="text-lg text-gray-500">בחר תבנית, העלה תמונה, וה-AI ישלב אותך בסצינות מדהימות.</p>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {allTemplates.map(template => {
                             const colorName = template.colorFrom.split('-')[1];
                             const colorShade = parseInt(template.colorFrom.split('-')[2] || '500');
@@ -978,8 +979,8 @@ export const Generator: React.FC<GeneratorProps> = ({ user, onLogout }) => {
     // --- RENDER: GENERATOR SCREEN ---
     return (
         <div className="h-screen bg-gray-50 overflow-hidden flex flex-col">
-            <header className={`bg-gradient-to-l ${selectedTemplate.colorFrom} ${selectedTemplate.colorTo} text-white p-6 shadow-lg z-20 shrink-0`}>
-                <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <header className={`bg-gradient-to-l ${selectedTemplate.colorFrom} ${selectedTemplate.colorTo} text-white px-4 sm:px-6 lg:px-8 shadow-lg z-20 shrink-0 h-24 flex items-center`}>
+                <div className="w-full flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <button onClick={exitToSelection} className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition backdrop-blur cursor-pointer z-50" title="חזרה לבחירת תבניות"><Icon name="Home" size={24} /></button>
                         <div>
@@ -996,7 +997,7 @@ export const Generator: React.FC<GeneratorProps> = ({ user, onLogout }) => {
                     </div>
                 </div>
             </header>
-            <main className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
+            <main className="flex-1 w-full p-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
                 <div className="lg:col-span-4 h-full overflow-y-auto pr-2 pb-4 scrollbar-hide">
                     <div className="space-y-6">
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
